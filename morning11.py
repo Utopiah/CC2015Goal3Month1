@@ -21,6 +21,7 @@
 #             manual review
 #             annotation
 #             submission
+import sys
 import json
 import PythonMagick as Magick
 import urllib2
@@ -30,23 +31,17 @@ import os
 import os.path
 import hashlib
 import pickle
-
-def loadData(resultsfile):
-    jsonresults = open(resultsfile)
-    pastcreations = json.load(jsonresults)
-    for i in pastcreations:
-        print i
-        #nothing yet
-    jsonresults.close()
+from PIL import Image
 
 class NewCreation:
-    def __init__(self):
+    def __init__(self, imagestouse, ad_keywords, resultpath):
         #creations += self
-        exploredfrom = self # other NewCreation
+        self.exploredfrom = self # other NewCreation
+        self.filename = resultpath
+        self.sourcefiles = imagestouse    # a specific class with file urls, dates, format, etc
+        self.keywords = ad_keywords       # either string or class to be defined
+        #redundant
 
-    filename = ""
-    sourcefiles = []    # a specific class with file urls, dates, format, etc
-    keywords = []       # either string or class to be defined
     blendingmethod = "" # currently only one, could also be a class
     generationtime = "" #DateTime.now() 
      
@@ -56,16 +51,35 @@ class SrcImage:
         self.keyword=keyword
 
 def blend(imagestouse, ad_keywords):
-    
-    os.system("montage " + ' '.join(str(x) for x in imagestouse) + " result_" + '_'.join(str(x) for x in ad_keywords) + ".png")
-    # horrible, should use the ImageQuick binding but no time left to check the documentation...
-    # http://www.imagemagick.org/Usage/montage/
-    # or rather PIL PIllow equivalent, no need to add a rare library
+    hash_object = hashlib.md5('_'.join(str(x.path) for x in imagestouse).encode())
+    imageHash = hash_object.hexdigest()
+    resultpath = "results/result_" + imageHash + ".png"
+    os.system("montage " + ' '.join(str(x.path) for x in imagestouse) + " " + resultpath)
+    return NewCreation(imagestouse, ad_keywords ,resultpath )
+    # Move to PIL PIllow equivalent, no need to add a rare library
     # http://pillow.readthedocs.org/reference/ImageChops.html
+    # Consider a list of blending functions instead
+
+def blendPIL(imagestouse, ad_keywords):
+    A6size=(1748,1240)
+    pilimg = []
+    pilimgresized = []
+    pilimgmodded = []
+    for il in imagestouse:
+        pilimg.append(Image.open(il.path))
+        pilimgresized.append(pilimg[-1].resize(A6size))
+        pilimgmodded.append(pilimgresized[-1].convert('RGBA'))
+    blended = Image.blend(pilimgmodded[0],pilimgmodded[1],0.5)
+    blended = Image.blend(blended,pilimgmodded[-1],0.7)
+    hash_object = hashlib.md5('_'.join(str(x.path) for x in imagestouse).encode())
+    imageHash = hash_object.hexdigest()
+    resultpath = "results/result_" + imageHash + ".png"
+    blended.save(resultpath)
+    return NewCreation(imagestouse, ad_keywords ,resultpath )
 
 def addImageToLibrary(keyword, startIndex):
     fetcher = urllib2.build_opener()
-    searchUrl = "http://ajax.googleapis.com/ajax/services/search/images?v=1.0&q=" + keyword + "&start=" + str(startIndex)
+    searchUrl = "http://ajax.googleapis.com/ajax/services/search/images?v=1.0&as_rights=cc_publicdomain&q=" + keyword + "&start=" + str(startIndex)
     f = fetcher.open(searchUrl)
     deserialized_output = simplejson.load(f)
     imageUrl = deserialized_output['responseData']['results'][0]['unescapedUrl']
@@ -92,31 +106,35 @@ def addImageToLibrary(keyword, startIndex):
 
 if __name__ == "__main__":
 
+    #All this should move to a JSON or similar configuration file
     rooturl = "done.with.software"
     #important for QRcode 
     srcimagespath = "srcimages/img" 
     resultsfile = "results.json"
+
+    #initializing DBs
     imagestouse = []
     imagesdb = []
-    ad_keywords = ['banana','car','Blue']
-    
+    createdimagesdb = []
+    ad_keywords = []
 
-    previousdata = "data.pkl"
-    if os.path.isfile(previousdata):
-        with open(previousdata, 'rb') as input:
+    for arg in sys.argv[1:]:
+        ad_keywords.append(arg)
+    if len(ad_keywords) < 3:
+        ad_keywords = ['banana','car','Blue']
+
+    storedcreatedimages = "storedcreatedimages.pkl"
+    if os.path.isfile(storedcreatedimages):
+        with open(storedcreatedimages, 'rb') as input:
+            createdimagesdb = pickle.load(input)
+
+    storedsourceimages = "storedsourceimages.pkl"
+    if os.path.isfile(storedsourceimages):
+        with open(storedsourceimages, 'rb') as input:
             imagesdb = pickle.load(input)
 
-    for i in imagesdb:
-        print i.keyword
-        print i.path
-
-    exit()
     #expected_number_results = 10
     #result_size = 1000
-    
-    creations = []
-    
-    #loadData(resultsfile)
     
     for keyword in ad_keywords:
         i = 0
@@ -124,25 +142,29 @@ if __name__ == "__main__":
         while newimage == 1:
             i += 1
             newimage = addImageToLibrary(keyword, i)
-        imagestouse.append(newimage.path)
+        imagestouse.append(newimage)
         imagesdb.append(newimage)
-    
-    with open(previousdata, 'wb') as output:
-        pickle.dump(imagesdb, output, pickle.HIGHEST_PROTOCOL)
-    exit()
     
     # should JSON dump else either re-downloading every time or losing data like keyword used
     #print "manual test : https://www.google.com/searchbyimage?&image_url="+serverRootUrl+resultname
     # print "Not h-creative, make other ..."
-    blend(imagestouse,ad_keywords)
-    resultname = "result_" + '_'.join(str(x) for x in ad_keywords) + ".png"
-    # overwrite, does not append
-    resultjson = {'category': 'Basic montage',
-        'fullsrc': '../' + resultname + '',
-        'description': 'basic montage relying on the keywords ' + ' '.join(str(x) for x in ad_keywords),
-        'lowsrc': '../' + resultname}
+    #newpic = blend(imagestouse,ad_keywords)
+    newpic = blendPIL(imagestouse,ad_keywords)
+
+    createdimagesdb.append(newpic)
+    resultjson = []
+    for image in createdimagesdb:
+        resultjson.append( {'category': 'Basic montage',
+            'fullsrc': '../' +image.filename + '',
+            'description': 'basic montage relying on the keywords ' + ' '.join(str(x) for x in image.keywords),
+            'lowsrc': '../' + image.filename})
+
     with open(resultsfile, 'w') as outputfile:
         json.dump(resultjson, outputfile)
     
+    with open(storedsourceimages, 'wb') as output:
+        pickle.dump(imagesdb, output, pickle.HIGHEST_PROTOCOL)
+    with open(storedcreatedimages, 'wb') as output:
+        pickle.dump(createdimagesdb, output, pickle.HIGHEST_PROTOCOL)
     
-    #delegate web server proper to lighttpd
+    #delegated web server proper to lighttpd
