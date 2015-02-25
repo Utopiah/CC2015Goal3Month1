@@ -25,7 +25,8 @@
 #             submission
 import sys
 import json
-import PythonMagick as Magick
+#import PythonMagick as Magick
+import pgmagick as Magick
 import urllib2
 import simplejson
 import cStringIO
