@@ -26,3 +26,11 @@ class TestSequenceFunctions(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+"""
+Still to test:
+def loadData(resultsfile):
+def blend(imagestouse, ad_keywords):
+def addImageToLibrary(keyword, startIndex):
+class NewCreation:
+"""

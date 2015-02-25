@@ -80,6 +80,7 @@ while os.path.isfile(resultname):
         resultname += "img" + word + ".png"+str(index)
     resultname += "result.png"
     while makeImage(ad_keywords,index) == 1:
+        # stop at 3, after that out of query size, must move to next page equivalent
         index += 1
         resultname = ""
         for word in ad_keywords:
